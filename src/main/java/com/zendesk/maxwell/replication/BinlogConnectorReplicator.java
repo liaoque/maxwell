@@ -240,7 +240,7 @@ public class BinlogConnectorReplicator extends RunLoopProcess implements Replica
 		if ( scripting != null && !isMaxwellRow(row))
 			scripting.invoke(row);
 
-		// 解析
+		// 加入kafka
 		processRow(row);
 	}
 
