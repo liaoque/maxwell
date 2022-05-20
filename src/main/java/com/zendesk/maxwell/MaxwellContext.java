@@ -89,8 +89,10 @@ public class MaxwellContext {
 		if ( this.metricRegistry == null )
 			this.metricRegistry = new MetricRegistry();
 
+		// 配置监控
 		this.metrics = new MaxwellMetrics(config, this.metricRegistry);
 
+		// slave c3p0链接池
 		this.replicationConnectionPool = new C3P0ConnectionPool(
 			config.replicationMysql.getConnectionURI(false),
 			config.replicationMysql.user,
@@ -99,9 +101,11 @@ public class MaxwellContext {
 
 		this.replicationConnectionPool.probe();
 
+
 		if (config.schemaMysql.host == null) {
 			this.schemaConnectionPool = null;
 		} else {
+			// 数据库
 			this.schemaConnectionPool = new C3P0ConnectionPool(
 				config.schemaMysql.getConnectionURI(false),
 				config.schemaMysql.user,
@@ -110,6 +114,7 @@ public class MaxwellContext {
 			this.schemaConnectionPool.probe();
 		}
 
+		// maxwell 数据库连接池
 		this.rawMaxwellConnectionPool = new C3P0ConnectionPool(
 			config.maxwellMysql.getConnectionURI(false),
 			config.maxwellMysql.user,
@@ -125,12 +130,14 @@ public class MaxwellContext {
 		if ( this.config.initPosition != null )
 			this.initialPosition = this.config.initPosition;
 
+		// 每次都从头读
 		if ( this.config.replayMode ) {
 			this.positionStore = new ReadOnlyMysqlPositionStore(this.getMaxwellConnectionPool(), this.getServerID(), this.config.clientID, config.gtidMode);
 		} else {
 			this.positionStore = new MysqlPositionStore(this.getMaxwellConnectionPool(), this.getServerID(), this.config.clientID, config.gtidMode);
 		}
 
+		// binlog日志诊断
 		this.heartbeatNotifier = new HeartbeatNotifier();
 		List<MaxwellDiagnostic> diagnostics = new ArrayList<>(Collections.singletonList(new BinlogConnectorDiagnostic(this)));
 		this.diagnosticContext = new MaxwellDiagnosticContext(config.diagnosticConfig, diagnostics);

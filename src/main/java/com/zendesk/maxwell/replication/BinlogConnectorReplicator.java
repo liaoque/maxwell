@@ -223,6 +223,7 @@ public class BinlogConnectorReplicator extends RunLoopProcess implements Replica
 	 * This is the top-level function in the run-loop.
 	 */
 	public void work() throws Exception {
+		//获取
 		RowMap row = null;
 		try {
 			row = getRow();
@@ -235,9 +236,11 @@ public class BinlogConnectorReplicator extends RunLoopProcess implements Replica
 		rowCounter.inc();
 		rowMeter.mark();
 
+		// hook 脚本
 		if ( scripting != null && !isMaxwellRow(row))
 			scripting.invoke(row);
 
+		// 解析
 		processRow(row);
 	}
 
@@ -687,6 +690,16 @@ public class BinlogConnectorReplicator extends RunLoopProcess implements Replica
 				}
 			}
 
+			// 最关键的是 QUERY
+			// getTransactionRows
+			//		- jsonMaps 内部判断dml 并返回
+			// processQueryEvent 会调用
+			// 		- schemaStore.processSQL(sql, dbName, position); 解析sql
+			//			- ddl 更新数据库；saveSchema(getSchema(), resolvedSchemaChanges, position)
+			//		- 之后判断是 ddl语句， 会包装 DDLMap 加入 producer
+			//		- 清除 table-cache
+			//		- schemaStore： com.zendesk.maxwell.schema.MysqlSchemaStore
+			//		- producer: MaxwellKafkaProducer
 			switch (event.getType()) {
 				case WRITE_ROWS:
 				case EXT_WRITE_ROWS:
@@ -740,6 +753,9 @@ public class BinlogConnectorReplicator extends RunLoopProcess implements Replica
 	}
 
 	protected BinlogConnectorEvent pollEvent() throws InterruptedException {
+		// BinaryLogClient 读取日志
+		// BinlogConnectorEventListener 包装 bing-log 为 BinlogConnectorEvent
+		// 最后放入 queue
 		return queue.poll(100, TimeUnit.MILLISECONDS);
 	}
 

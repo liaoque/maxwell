@@ -250,27 +250,36 @@ public class Maxwell implements Runnable {
 			SchemaStoreSchema.ensureMaxwellSchema(rawConnection, this.config.databaseName);
 
 			try ( Connection schemaConnection = this.context.getMaxwellConnection() ) {
+				// 初始化 maxwell 数据库
 				SchemaStoreSchema.upgradeSchemaStoreSchema(schemaConnection);
 			}
 		}
 
 		AbstractProducer producer = this.context.getProducer();
 
+		// 设置bing-log 偏移
 		Position initPosition = getInitialPosition();
 		logBanner(producer, initPosition);
 		this.context.setPosition(initPosition);
 
+		// 缓存表结构
+		// 从schemas表的 deltas 获取表结构的增量数据， 所有启动之后not found 都是这里出的问题
 		MysqlSchemaStore mysqlSchemaStore = new MysqlSchemaStore(this.context, initPosition);
 		BootstrapController bootstrapController = this.context.getBootstrapController(mysqlSchemaStore.getSchemaID());
 
+		// 压缩增量数据
+		// max_schemas 配置设置成 =1
 		this.context.startSchemaCompactor();
 
+		// 非只读情况下，重置 schemas 缓存
 		if (config.recaptureSchema) {
 			mysqlSchemaStore.captureAndSaveSchema();
 		}
 
 		mysqlSchemaStore.getSchema(); // trigger schema to load / capture before we start the replicator.
 
+		// bing-log 复制类
+		// 获取bing-log， 并解析日志，加入kafka，更新table-cache
 		this.replicator = new BinlogConnectorReplicator(
 			mysqlSchemaStore,
 			producer,
@@ -291,6 +300,13 @@ public class Maxwell implements Runnable {
 			config.binlogEventQueueSize
 		);
 
+		// 启动HTTP服务器并定位存储线程
+		// - http 服务器：
+		//		- 各种指标
+		//		- 热更新配置
+		//		- 健康检查
+		// - PositionStoreThread：
+		// 		- MysqlPositionStore 更新position
 		context.setReplicator(replicator);
 		this.context.start();
 
@@ -312,14 +328,18 @@ public class Maxwell implements Runnable {
 	public static void main(String[] args) {
 		try {
 			Logging.setupLogBridging();
+
+			// 取配置参数
 			MaxwellConfig config = new MaxwellConfig(args);
 
 			if ( config.log_level != null ) {
 				Logging.setLevel(config.log_level);
 			}
 
+			// 初始化
 			final Maxwell maxwell = new Maxwell(config);
 
+			// 设置回调
 			Runtime.getRuntime().addShutdownHook(new Thread() {
 				@Override
 				public void run() {
@@ -331,8 +351,10 @@ public class Maxwell implements Runnable {
 			LOGGER.info("Starting Maxwell. maxMemory: " + Runtime.getRuntime().maxMemory() + " bufferMemoryUsage: " + config.bufferMemoryUsage);
 
 			if ( config.haMode ) {
+				//高可用
 				new MaxwellHA(maxwell, config.jgroupsConf, config.raftMemberID, config.clientID).startHA();
 			} else {
+				//开始
 				maxwell.start();
 			}
 		} catch ( SQLException e ) {
